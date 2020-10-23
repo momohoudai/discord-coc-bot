@@ -86,7 +86,6 @@ struct CmdResist;
             say(ctx, msg, wrap_code!(help_resist!())).await; 
             return;
         }
-        
         let active = match args[2].parse::<i32>() {
             Ok(x) => x,
             Err(_) => {
@@ -102,7 +101,7 @@ struct CmdResist;
                 return;
             }
         };
-        
+         
         let result = (active - passive) * 5 + 50;
         if result > 95 {
             say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is an **Automatic Success**!!\\(^o^)/", active, passive)).await;
@@ -139,6 +138,7 @@ struct CmdFind;
             say(ctx, msg, wrap_code!(help_find!())).await;
             return;
         }
+
         let key: String = args[2..].join(" ").to_lowercase();
         let mut aka_key: Option<String> = None;
         let data = ctx.data.read().await;
