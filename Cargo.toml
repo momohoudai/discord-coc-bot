@@ -25,7 +25,13 @@ features = ["derive"]
 
 [dependencies.serenity]
 default-features = false
-features = ["client", "gateway", "rustls_backend", "model"]
+features = [
+    "client", 
+    "gateway", 
+    "rustls_backend", 
+    "model",
+    "framework"
+]
 version = "0.9.0-rc.2"
 
 [dependencies.tokio]

@@ -20,11 +20,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // TypeMapKeys ////////////////////////////////////////////////////////////////////////////////
-struct CommandMap;
-impl TypeMapKey for CommandMap {
-    type Value = Arc<HashMap<&'static str, Box<dyn Command>>>;
-}
-
 struct Dictionary;
 impl TypeMapKey for Dictionary {
     type Value = Arc<HashMap<String, String>>;
@@ -88,228 +83,220 @@ async fn say(ctx: &Context, msg: &Message, display: impl std::fmt::Display)  {
 
 
 // Commands /////////////////////////////////////////////////////////////////////////////////////////////
-#[async_trait]
-pub trait Command: Send + Sync {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>);
+#[group]
+#[commands(version, get_alias, add_alias, remove_alias, find, help, resist)]
+struct General;
+
+
+#[command]
+async fn version(ctx: &Context, msg: &Message) -> CommandResult {
+    say(ctx, msg, "I'm CocBot v2.0.0, written in Rust!!").await;
+    return Ok(());
 }
 
-struct CmdResist;
-#[async_trait] impl Command for CmdResist {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
-        if args.len() != 5 || args[3] != "vs" {
-            say(ctx, msg, wrap_code!(help_resist!())).await; 
-            return;
-        }
-        let active = match args[2].parse::<i32>() {
-            Ok(x) => x,
-            Err(_) => {
-                say(ctx, msg, wrap_code!(help_resist!())).await;
-                return;
-            }
-        };
+#[command]
+async fn resist(ctx: &Context, msg: &Message) -> CommandResult {
+    if args.len() != 5 || args[3] != "vs" {
+        say(ctx, msg, wrap_code!(help_resist!())).await; 
+        return Ok(());
+    }
 
-        let passive = match args[4].parse::<i32>() {
-            Ok(x) => x,
-            Err(_) => {
-                say(ctx, msg, wrap_code!(help_resist!())).await;
-                return;
-            }
-        };
+    let active = match args[2].parse::<i32>() {
+        Ok(x) => x,
+        Err(_) => {
+            say(ctx, msg, wrap_code!(help_resist!())).await;
+            return Ok(());
+        }
+    };
+
+    let passive = match args[4].parse::<i32>() {
+        Ok(x) => x,
+        Err(_) => {
+            say(ctx, msg, wrap_code!(help_resist!())).await;
+            return Ok(());
+        }
+    };
+     
+    let result = (active - passive) * 5 + 50;
+    if result > 95 {
+        say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is an **Automatic Success**!!\\(^o^)/", active, passive)).await;
+    }
+    else if result < 5 {
+        say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is an **Automatic Failure**!! (´・ω・`)", active, passive)).await;
+    }
+    else {
+        say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is **{}**!! （｀・ω・´）", active, passive, result)).await;
+    }
+
+    return Ok(());
+}
+
+#[command]
+async fn help(ctx: &Context, msg: &Message) -> CommandResult {
+    say(ctx, msg, wrap_code!(help!())).await;
+    return Ok(());
+}
+
+#[command]
+async fn find(ctx: &Context, msg: &Message) -> CommandResult {
+    if args.len() <= 2 {
+        say(ctx, msg, wrap_code!(help_find!())).await;
+        return Ok(());
+    }
+
+    let key: String = args[2..].join(" ").to_lowercase();
+    let mut aka_key: Option<String> = None;
+    let data = ctx.data.read().await;
+    {
+        let alias_db = data.get::<AliasDatabase>()
+            .expect("[CmdFind] AliasDatabase not set!")
+            .lock()
+            .await;
+        let mut stmt = alias_db.prepare("SELECT value FROM alias WHERE key = (?)")
+            .expect("[CmdFind] Problem preparing query");
+    
+        let mut rows = stmt.query(&[&key])
+            .expect("[CmdFind] Problem executing query");
          
-        let result = (active - passive) * 5 + 50;
-        if result > 95 {
-            say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is an **Automatic Success**!!\\(^o^)/", active, passive)).await;
-        }
-        else if result < 5 {
-            say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is an **Automatic Failure**!! (´・ω・`)", active, passive)).await;
-        }
-        else {
-            say(ctx, msg, format!("Let's see...\nActive: **{}**\nPassive: **{}**\nThe result is **{}**!! （｀・ω・´）", active, passive, result)).await;
-        }
-
+        if let Some(row) = rows.next().expect("[CmdFind] Problem getting row") {
+            aka_key = Some(row.get(0).expect("[CmdFind] Problem getting value from row"));
+        } 
     }
+    
+    let dictionary = data.get::<Dictionary>()
+        .expect("[CmdFind] Dictionary not set!");
+
+    match aka_key {
+        Some(aka_key_v) => {
+            match dictionary.get(aka_key_v.as_str()) {
+                Some(value) => say(ctx, msg, format!("I found **{}** (aka **{}**)! ```{}```", key, aka_key_v, value)).await,
+                None => say(ctx, msg, "Sorry...I can't find what you are looking for >_<").await
+            };
+        },
+        None => {
+            match dictionary.get(key.as_str()) {
+                Some(value) => say(ctx, msg, format!("I found **{}**! ```{}```", key, value)).await,
+                None => say(ctx, msg, "Sorry...I can't find what you are looking for >_<").await
+            };
+        }
+    }
+    return Ok(());
 }
 
-
-struct CmdVersion;
-#[async_trait] impl Command for CmdVersion {
-    async fn exec(&self, ctx: &Context, msg: &Message, _: &Vec<&str>) {
-        say(ctx, msg, "I'm CocBot v1.0.0, written in Rust!!").await;
+#[command]
+#[aliases("remove-alias")]
+async fn remove_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+    if args.len() <= 2 {
+        say(ctx, msg, wrap_code!(help_alias!())).await;
+        return Ok(());
     }
-}
-struct CmdHelp;
-#[async_trait] impl Command for CmdHelp {
-    async fn exec(&self, ctx: &Context, msg: &Message, _: &Vec<&str>) {
-        say(ctx, msg, wrap_code!(help!())).await;
+    let alias_name = args[2..].join(" ").to_lowercase();
+    let rows_affected: usize;
+    {
+        let data = ctx.data.read().await;
+        let alias_db = data.get::<AliasDatabase>()
+            .expect("[CmdRemoveAlias] AliasDatabase not set!")
+            .lock()
+            .await;
+        rows_affected = alias_db.execute("DELETE FROM alias WHERE key = (?)", &[&alias_name])
+            .expect("[CmdRemoveAlias]  Cannot execute query!");
     }
+
+    if rows_affected == 0 {
+        say(ctx, msg, format!("Sorry, I can't find an alias named **{}**...", alias_name)).await;
+        return Ok(());
+    }
+    
+    say(ctx, msg, format!("Done! **{}** is not longer an alias! ^^b", alias_name)).await;
+    return Ok(());
+
 }
 
+#[command]
+#[aliases("add-alias")]
+async fn add_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+    if args.len() <= 2 {
+        say(ctx, msg, wrap_code!(help_alias!())).await;
+        return Ok(());
+    }
 
-struct CmdFind; 
-#[async_trait] impl Command for CmdFind {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
-        if args.len() <= 2 {
-            say(ctx, msg, wrap_code!(help_find!())).await;
-            return;
+    let alias_name: &str;
+    let target_name: &str;
+    let str_to_parse = args[2..].join(" ").to_lowercase();
+    {    
+        let str_to_parse_arr = str_to_parse.split(" = ").collect::<Vec<&str>>();
+        if str_to_parse_arr.len() != 2 {
+            say(ctx, msg, wrap_code!(help_alias!())).await;
+            return Ok(());
         }
+        alias_name = str_to_parse_arr.get(0).expect("[CmdAddAlias] Problem getting alias_name");
+        target_name = str_to_parse_arr.get(1).expect("[CmdAddAlias] Problem getting target_name");
+    }   
 
-        let key: String = args[2..].join(" ").to_lowercase();
-        let mut aka_key: Option<String> = None;
+    let rows_affected: usize;
+    {
         let data = ctx.data.read().await;
         {
-            let alias_db = data.get::<AliasDatabase>()
-                .expect("[CmdFind] AliasDatabase not set!")
-                .lock()
-                .await;
-            let mut stmt = alias_db.prepare("SELECT value FROM alias WHERE key = (?)")
-                .expect("[CmdFind] Problem preparing query");
-        
-            let mut rows = stmt.query(&[&key])
-                .expect("[CmdFind] Problem executing query");
-             
-            if let Some(row) = rows.next().expect("[CmdFind] Problem getting row") {
-                aka_key = Some(row.get(0).expect("[CmdFind] Problem getting value from row"));
-            } 
-        }
-        
-        let dictionary = data.get::<Dictionary>()
-            .expect("[CmdFind] Dictionary not set!");
-
-        match aka_key {
-            Some(aka_key_v) => {
-                match dictionary.get(aka_key_v.as_str()) {
-                    Some(value) => say(ctx, msg, format!("I found **{}** (aka **{}**)! ```{}```", key, aka_key_v, value)).await,
-                    None => say(ctx, msg, "Sorry...I can't find what you are looking for >_<").await
-                };
-            },
-            None => {
-                match dictionary.get(key.as_str()) {
-                    Some(value) => say(ctx, msg, format!("I found **{}**! ```{}```", key, value)).await,
-                    None => say(ctx, msg, "Sorry...I can't find what you are looking for >_<").await
-                };
+            let dictionary = data.get::<Dictionary>()
+                .expect("[CmdAddAlias] Dictionary not set!");
+            if !dictionary.contains_key(target_name)  {
+                say(ctx, msg, "Target not found! Are you sure the target name is correct?").await;
+                return Ok(());
             }
         }
 
-    }
-}
-
-struct CmdRemoveAlias;
-#[async_trait] impl Command for CmdRemoveAlias {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
-        if args.len() <= 2 {
-            say(ctx, msg, wrap_code!(help_alias!())).await;
-            return;
-        }
-        let alias_name = args[2..].join(" ").to_lowercase();
-        let rows_affected: usize;
-        {
-            let data = ctx.data.read().await;
-            let alias_db = data.get::<AliasDatabase>()
-                .expect("[CmdRemoveAlias] AliasDatabase not set!")
-                .lock()
-                .await;
-            rows_affected = alias_db.execute("DELETE FROM alias WHERE key = (?)", &[&alias_name])
-                .expect("[CmdRemoveAlias]  Cannot execute query!");
-        }
-
-        if rows_affected == 0 {
-            say(ctx, msg, format!("Sorry, I can't find an alias named **{}**...", alias_name)).await;
-            return;
-        }
-        
-        say(ctx, msg, format!("Done! **{}** is not longer an alias! ^^b", alias_name)).await;
-
+        let alias_db = data.get::<AliasDatabase>()
+            .expect("[CmdAddAlias] AliasDatabase not set!")
+            .lock()
+            .await;
+        rows_affected = alias_db.execute("INSERT OR IGNORE INTO alias VALUES (?, ?)", &[&alias_name, &target_name])
+            .expect("[CmdAddAlias]  Cannot execute query!");
     }
 
-}
-
-struct CmdAddAlias;
-#[async_trait] impl Command for CmdAddAlias {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
-        if args.len() <= 2 {
-            say(ctx, msg, wrap_code!(help_alias!())).await;
-            return;
-        }
+    if rows_affected == 0 {
+        say(ctx, msg, format!("Duplicate alias **{}** found! Please remove first with the *alias remove* command", alias_name)).await;
+        return Ok(());
+    }
     
-        let alias_name: &str;
-        let target_name: &str;
-        let str_to_parse = args[2..].join(" ").to_lowercase();
-        {    
-            let str_to_parse_arr = str_to_parse.split(" = ").collect::<Vec<&str>>();
-            if str_to_parse_arr.len() != 2 {
-                say(ctx, msg, wrap_code!(help_alias!())).await;
-                return;
-            }
-            alias_name = str_to_parse_arr.get(0).expect("[CmdAddAlias] Problem getting alias_name");
-            target_name = str_to_parse_arr.get(1).expect("[CmdAddAlias] Problem getting target_name");
-        }   
+    say(ctx, msg, format!("Alias added! **{}** is now also known as **{}**!", target_name, alias_name)).await;
+    return Ok(());
+}
 
-        let rows_affected: usize;
-        {
-            let data = ctx.data.read().await;
-            {
-                let dictionary = data.get::<Dictionary>()
-                    .expect("[CmdAddAlias] Dictionary not set!");
-                if !dictionary.contains_key(target_name)  {
-                    say(ctx, msg, "Target not found! Are you sure the target name is correct?").await;
-                    return;
-                }
-            }
-
-            let alias_db = data.get::<AliasDatabase>()
-                .expect("[CmdAddAlias] AliasDatabase not set!")
-                .lock()
-                .await;
-            rows_affected = alias_db.execute("INSERT OR IGNORE INTO alias VALUES (?, ?)", &[&alias_name, &target_name])
-                .expect("[CmdAddAlias]  Cannot execute query!");
-        }
+#[command]
+#[aliases("get-alias")]
+async fn get_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+    if args.len() <= 2 {
+        say(ctx, msg, wrap_code!(help_alias!())).await;
+        return Ok(());
+    }
+    let mut found = false;
+    let mut result: String = String::new();
+    let alias_name: String = args[2..].join(" ");
+    {
+        let data = ctx.data.read().await;
+        let alias_db = data.get::<AliasDatabase>()
+            .expect("[CmdGetAlias] AliasDatabase not set!")
+            .lock()
+            .await;
+         
+        let mut stmt = alias_db.prepare("SELECT value FROM alias WHERE key = (?)")
+                .expect("[CmdGetAlias] Problem preparing query");
+        
+        let mut rows = stmt.query(&[&alias_name])
+            .expect("[CmdGetAlias] Problem executing query");
+      
+        if let Some(row) = rows.next().expect("[CmdGetAlias] Problem getting row") {
+            result = row.get(0).expect("[CmdGetAlias] Problem getting value from row");
+            found = true;
+        } 
+    }
     
-        if rows_affected == 0 {
-            say(ctx, msg, format!("Duplicate alias **{}** found! Please remove first with the *alias remove* command", alias_name)).await;
-            return;
-        }
-        
-        say(ctx, msg, format!("Alias added! **{}** is now also known as **{}**!", target_name, alias_name)).await;
+    match found {
+        true => say(ctx, msg, format!("**{}** is also known as **{}**.", alias_name.as_str(), result.as_str())).await,
+        false => say(ctx, msg, format!("Sorry, I can't find an alias named **{}**...", alias_name.as_str())).await,
     }
+    return Ok(());
 }
-
-struct CmdGetAlias;
-#[async_trait] impl Command for CmdGetAlias {
-    async fn exec(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
-        if args.len() <= 2 {
-            say(ctx, msg, wrap_code!(help_alias!())).await;
-            return;
-        }
-        let mut found = false;
-        let mut result: String = String::new();
-        let alias_name: String = args[2..].join(" ");
-        {
-            let data = ctx.data.read().await;
-            let alias_db = data.get::<AliasDatabase>()
-                .expect("[CmdGetAlias] AliasDatabase not set!")
-                .lock()
-                .await;
-             
-            let mut stmt = alias_db.prepare("SELECT value FROM alias WHERE key = (?)")
-                    .expect("[CmdGetAlias] Problem preparing query");
-            
-            let mut rows = stmt.query(&[&alias_name])
-                .expect("[CmdGetAlias] Problem executing query");
-          
-            if let Some(row) = rows.next().expect("[CmdGetAlias] Problem getting row") {
-                result = row.get(0).expect("[CmdGetAlias] Problem getting value from row");
-                found = true;
-            } 
-        }
-        
-        match found {
-            true => say(ctx, msg, format!("**{}** is also known as **{}**.", alias_name.as_str(), result.as_str())).await,
-            false => say(ctx, msg, format!("Sorry, I can't find an alias named **{}**...", alias_name.as_str())).await,
-        }
-    }
-}
-
-
 
 
 #[derive(Deserialize)]
@@ -322,49 +309,6 @@ struct Config {
 
 struct DiscordHandler; 
 #[async_trait] impl EventHandler for DiscordHandler {
-    // Set a handler for the `message` event - so that whenever a new message
-    // is received - the closure (or function) passed will be called.
-    //
-    // Event handlers are dispatched through a threadpool, and so multiple
-    // events can be dispatched simultaneously.
-    async fn message(&self, ctx: Context, msg: Message) {
-        let data = ctx.data.read().await;
-        let prefix = data.get::<Prefix>().expect("Prefix not set!");
-        // Handle prefix
-        let is_prefixed = msg.content.starts_with(prefix.as_str());
-        
-        if is_prefixed {
-            let arg_splitter = data.get::<ArgSplitter>().expect("ArgSplitter not set!");
-            let command_map  = data.get::<CommandMap>().expect("CommandMap not set!");
-            let mut arg_list: Vec<&str> = Vec::new();
-            {
-                for part in &mut arg_splitter.find_iter(msg.content.as_str()) {
-                    arg_list.push(part.as_str());
-                }
-            }
-
-            let cmd_str: &str;
-            {
-                let opt_cmd_str = arg_list.get(1);
-                if opt_cmd_str.is_none() {
-                    return;
-                }
-                cmd_str = opt_cmd_str.unwrap();
-            }
-
-            let command: &Box<dyn Command>;
-            {
-                let opt_command = command_map.get(cmd_str);
-                if opt_command.is_none() {
-                    return;
-                }
-                command = opt_command.unwrap();
-            }
-            command.exec(&ctx, &msg, &arg_list).await;
-        }
-
-    }
-
     // Set a handler to be called on the `ready` event. This is called when a
     // shard is booted, and a READY payload is sent by Discord. This payload
     // contains data like the current user's guild Ids, current user data,
@@ -393,31 +337,22 @@ async fn main() {
             .expect("Cannot parse 'config.json'");
     }
 
-   
+
+    let framework = StandardFramework::new()
+        .configure(|c| c.prefix(config.prefix))
+        .group(&GENERAL_GROUP);
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let mut client = Client::builder(&config.token)
                         .event_handler(DiscordHandler)
+                        .framework(framework)
                         .await
                         .expect("Error creating client");
 
     {
         let mut data = client.data.write().await;
-        // Command map
-        {
-            let mut cmd_map: HashMap<&str, Box<dyn Command>> = HashMap::new();
-            cmd_map.insert("version",  Box::new(CmdVersion{}));
-            cmd_map.insert("get-alias", Box::new(CmdGetAlias{}));
-            cmd_map.insert("add-alias", Box::new(CmdAddAlias{}));
-            cmd_map.insert("remove-alias", Box::new(CmdRemoveAlias{}));
-            cmd_map.insert("find", Box::new(CmdFind{}));
-            cmd_map.insert("help", Box::new(CmdHelp{}));
-            cmd_map.insert("resist", Box::new(CmdResist{}));
-            data.insert::<CommandMap>(Arc::new(cmd_map));
-        }
-
      
         // alias database
         {
@@ -436,12 +371,6 @@ async fn main() {
             
             data.insert::<Dictionary>(Arc::new(data_json));
         }
-
-        data.insert::<ArgSplitter>(Arc::new(Regex::new(r#"(?i)(?:[^\s"]+\b|:|(")[^"]*("))+|[=!&|~]"#)
-            .expect("Cannot initialize arg_splitter")));
-    
-        data.insert::<Prefix>(Arc::new(String::from(config.prefix)));
-
        
     }
 
