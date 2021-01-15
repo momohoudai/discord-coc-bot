@@ -185,7 +185,7 @@ async fn find(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[aliases("remove-alias")]
-async fn remove_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+async fn remove_alias(ctx: &Context, msg: &Message) {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
@@ -214,7 +214,7 @@ async fn remove_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
 
 #[command]
 #[aliases("add-alias")]
-async fn add_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+async fn add_alias(ctx: &Context, msg: &Message) {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
@@ -264,7 +264,7 @@ async fn add_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
 
 #[command]
 #[aliases("get-alias")]
-async fn get_alias(&self, ctx: &Context, msg: &Message, args: &Vec<&str>) {
+async fn get_alias(ctx: &Context, msg: &Message) {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
