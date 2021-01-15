@@ -1,11 +1,25 @@
 use rusqlite::Connection;
 use regex::Regex; 
-use serenity::{async_trait, client::Client, client::Context, client::EventHandler, model::channel::Message, model::gateway::Activity, model::gateway::Ready, prelude::TypeMapKey};
+
+use serenity::async_trait;
+use serenity::client::Client; 
+use serenity::client::Context; 
+use serenity::client::EventHandler; 
+use serenity::model::channel::Message; 
+use serenity::model::gateway::Activity; 
+use serenity::model::gateway::Ready; 
+use serenity::prelude::TypeMapKey;
+
 use serde::Deserialize;
-use std::{collections::HashMap, fs::File, io::BufReader,  sync::Arc};
+
+use std::collections::HashMap; 
+use std::fs::File;
+use std::io::BufReader;
+use std::sync::Arc;
+
 use tokio::sync::Mutex;
 
-// TypeMapKeys /////////////////////////////////////////////////////////////////////////////////////////////
+// TypeMapKeys ////////////////////////////////////////////////////////////////////////////////
 struct CommandMap;
 impl TypeMapKey for CommandMap {
     type Value = Arc<HashMap<&'static str, Box<dyn Command>>>;
@@ -384,10 +398,10 @@ async fn main() {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let mut client = Client::new(&config.token)
-        .event_handler(DiscordHandler)
-        .await
-        .expect("Error creating client");
+    let mut client = Client::builder(&config.token)
+                        .event_handler(DiscordHandler)
+                        .await
+                        .expect("Error creating client");
 
     {
         let mut data = client.data.write().await;
