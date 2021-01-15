@@ -9,6 +9,10 @@ use serenity::model::channel::Message;
 use serenity::model::gateway::Activity; 
 use serenity::model::gateway::Ready; 
 use serenity::prelude::TypeMapKey;
+use serenity::framework::standard::macros::*;
+use serenity::framework::standard::Args;
+use serenity::framework::standard::StandardFramework;
+use serenity::framework::standard::CommandResult;
 
 use serde::Deserialize;
 
@@ -16,23 +20,12 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-
 use tokio::sync::Mutex;
 
-// TypeMapKeys ////////////////////////////////////////////////////////////////////////////////
+// TypeMapKeys ///////////////////////////////////////////////////////////////
 struct Dictionary;
 impl TypeMapKey for Dictionary {
     type Value = Arc<HashMap<String, String>>;
-}
-
-struct ArgSplitter;
-impl TypeMapKey for ArgSplitter {
-    type Value = Arc<Regex>;
-}
-
-struct Prefix;
-impl TypeMapKey for Prefix {
-    type Value = Arc<String>;
 }
 
 struct AliasDatabase;
@@ -41,7 +34,7 @@ impl TypeMapKey for AliasDatabase {
 }
 
 
-// Common functions /////////////////////////////////////////////////////////////////////////////////////
+// Common functions /////////////////////////////////////////////////////////////
 macro_rules! help_find {
     () => ( "find: Use this command to find something\n\t> Usage: !coc find <something>\n" )
 }
@@ -81,8 +74,17 @@ async fn say(ctx: &Context, msg: &Message, display: impl std::fmt::Display)  {
 }
 
 
+fn args_to_string(mut args: Args) -> String {
+    let mut ret = String::with_capacity(128);
+    ret.push_str(args.single::<String>().unwrap().as_str());
+    for arg in args.iter::<String>() {
+        ret.push_str(format!(" {}", arg.unwrap()).as_str());
+    }
 
-// Commands /////////////////////////////////////////////////////////////////////////////////////////////
+    return ret;
+}
+
+// Commands /////////////////////////////////////////////////////////////
 #[group]
 #[commands(version, get_alias, add_alias, remove_alias, find, help, resist)]
 struct General;
@@ -95,13 +97,13 @@ async fn version(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-async fn resist(ctx: &Context, msg: &Message) -> CommandResult {
-    if args.len() != 5 || args[3] != "vs" {
+async fn resist(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    if args.len() != 3 {
         say(ctx, msg, wrap_code!(help_resist!())).await; 
         return Ok(());
     }
 
-    let active = match args[2].parse::<i32>() {
+    let active = match args.single::<i32>() {
         Ok(x) => x,
         Err(_) => {
             say(ctx, msg, wrap_code!(help_resist!())).await;
@@ -109,7 +111,20 @@ async fn resist(ctx: &Context, msg: &Message) -> CommandResult {
         }
     };
 
-    let passive = match args[4].parse::<i32>() {
+    match args.single::<String>() {
+        Ok(x) => {
+            if x != "vs" {            
+                say(ctx, msg, wrap_code!(help_resist!())).await;
+                return Ok(());
+            }
+        },
+        Err(_) => {
+            say(ctx, msg, wrap_code!(help_resist!())).await;
+            return Ok(());
+        }
+    };
+
+    let passive = match args.single::<i32>() {
         Ok(x) => x,
         Err(_) => {
             say(ctx, msg, wrap_code!(help_resist!())).await;
@@ -138,13 +153,13 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-async fn find(ctx: &Context, msg: &Message) -> CommandResult {
+async fn find(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_find!())).await;
         return Ok(());
     }
 
-    let key: String = args[2..].join(" ").to_lowercase();
+    let key: String = args_to_string(args).to_lowercase();
     let mut aka_key: Option<String> = None;
     let data = ctx.data.read().await;
     {
@@ -185,12 +200,13 @@ async fn find(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[aliases("remove-alias")]
-async fn remove_alias(ctx: &Context, msg: &Message) {
+async fn remove_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
     }
-    let alias_name = args[2..].join(" ").to_lowercase();
+
+    let alias_name: String = args_to_string(args).to_lowercase();
     let rows_affected: usize;
     {
         let data = ctx.data.read().await;
@@ -214,7 +230,7 @@ async fn remove_alias(ctx: &Context, msg: &Message) {
 
 #[command]
 #[aliases("add-alias")]
-async fn add_alias(ctx: &Context, msg: &Message) {
+async fn add_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult{
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
@@ -222,7 +238,7 @@ async fn add_alias(ctx: &Context, msg: &Message) {
 
     let alias_name: &str;
     let target_name: &str;
-    let str_to_parse = args[2..].join(" ").to_lowercase();
+    let str_to_parse: String = args_to_string(args).to_lowercase();
     {    
         let str_to_parse_arr = str_to_parse.split(" = ").collect::<Vec<&str>>();
         if str_to_parse_arr.len() != 2 {
@@ -264,14 +280,14 @@ async fn add_alias(ctx: &Context, msg: &Message) {
 
 #[command]
 #[aliases("get-alias")]
-async fn get_alias(ctx: &Context, msg: &Message) {
+async fn get_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     if args.len() <= 2 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
     }
     let mut found = false;
-    let mut result: String = String::new();
-    let alias_name: String = args[2..].join(" ");
+    let mut result: String = String::new();    
+    let alias_name: String = args_to_string(args).to_lowercase();
     {
         let data = ctx.data.read().await;
         let alias_db = data.get::<AliasDatabase>()
@@ -339,7 +355,7 @@ async fn main() {
 
 
     let framework = StandardFramework::new()
-        .configure(|c| c.prefix(config.prefix))
+        .configure(|c| c.prefix(config.prefix.as_str()))
         .group(&GENERAL_GROUP);
 
     // Create a new instance of the Client, logging in as a bot. This will
