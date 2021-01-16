@@ -1,5 +1,4 @@
 use rusqlite::Connection;
-use regex::Regex; 
 
 use serenity::async_trait;
 use serenity::client::Client; 
@@ -154,11 +153,6 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn find(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if args.len() <= 2 {
-        say(ctx, msg, wrap_code!(help_find!())).await;
-        return Ok(());
-    }
-
     let key: String = args_to_string(args).to_lowercase();
     let mut aka_key: Option<String> = None;
     let data = ctx.data.read().await;
@@ -167,10 +161,12 @@ async fn find(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             .expect("[CmdFind] AliasDatabase not set!")
             .lock()
             .await;
-        let mut stmt = alias_db.prepare("SELECT value FROM alias WHERE key = (?)")
+        let mut stmt = alias_db
+            .prepare("SELECT value FROM alias WHERE key = (?)")
             .expect("[CmdFind] Problem preparing query");
     
-        let mut rows = stmt.query(&[&key])
+        let mut rows = stmt
+            .query(&[&key])
             .expect("[CmdFind] Problem executing query");
          
         if let Some(row) = rows.next().expect("[CmdFind] Problem getting row") {
@@ -201,7 +197,7 @@ async fn find(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[command]
 #[aliases("remove-alias")]
 async fn remove_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if args.len() <= 2 {
+    if args.len() == 0 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
     }
@@ -214,7 +210,8 @@ async fn remove_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult
             .expect("[CmdRemoveAlias] AliasDatabase not set!")
             .lock()
             .await;
-        rows_affected = alias_db.execute("DELETE FROM alias WHERE key = (?)", &[&alias_name])
+        rows_affected = alias_db
+            .execute("DELETE FROM alias WHERE key = (?)", &[&alias_name])
             .expect("[CmdRemoveAlias]  Cannot execute query!");
     }
 
@@ -245,8 +242,10 @@ async fn add_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult{
             say(ctx, msg, wrap_code!(help_alias!())).await;
             return Ok(());
         }
-        alias_name = str_to_parse_arr.get(0).expect("[CmdAddAlias] Problem getting alias_name");
-        target_name = str_to_parse_arr.get(1).expect("[CmdAddAlias] Problem getting target_name");
+        alias_name = str_to_parse_arr.get(0)
+            .expect("[CmdAddAlias] Problem getting alias_name");
+        target_name = str_to_parse_arr.get(1)
+            .expect("[CmdAddAlias] Problem getting target_name");
     }   
 
     let rows_affected: usize;
@@ -281,7 +280,7 @@ async fn add_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult{
 #[command]
 #[aliases("get-alias")]
 async fn get_alias(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if args.len() <= 2 {
+    if args.len() == 0 {
         say(ctx, msg, wrap_code!(help_alias!())).await;
         return Ok(());
     }
@@ -355,7 +354,9 @@ async fn main() {
 
 
     let framework = StandardFramework::new()
-        .configure(|c| c.prefix(config.prefix.as_str()))
+        .configure(|c| c
+                   .with_whitespace(true)
+                   .prefix(config.prefix.as_str()))
         .group(&GENERAL_GROUP);
 
     // Create a new instance of the Client, logging in as a bot. This will
@@ -365,7 +366,7 @@ async fn main() {
                         .event_handler(DiscordHandler)
                         .framework(framework)
                         .await
-                        .expect("Error creating client");
+                        .unwrap();
 
     {
         let mut data = client.data.write().await;
