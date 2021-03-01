@@ -1,6 +1,3 @@
-config.json
+TOKEN
 *.exe
-Makefile
-target/
-deploy/packages/
-.vscode/
+pi/
