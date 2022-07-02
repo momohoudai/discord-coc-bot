@@ -1,241 +1,238 @@
 package main
 
 import (
-	"github.com/bwmarrin/discordgo"
-    bolt "go.etcd.io/bbolt"
+  "github.com/bwmarrin/discordgo"
+  bolt "go.etcd.io/bbolt"
 
-    "strings"
-	"fmt"
-	"regexp"
-    "strconv"
+  "strings"
+  "fmt"
+  "regexp"
+  "strconv"
 )
 
 var (
-	GlobalCommandArgSplitter *regexp.Regexp
+  global_command_arg_splitter  *regexp.Regexp
 )
 
-const DiscordMessageMaxChars int = 2000
+const DISCORD_MESSAGE_MAX_CHARACTERS int = 2000
 
-func InitCommands() {
-	GlobalCommandArgSplitter = regexp.MustCompile(`(?i)(?:[^\s"]+\b|:|(")[^"]*("))+|[=!&|~+\-\*\/\%]`)
-	if GlobalCommandArgSplitter == nil {
-		Panik("commandArgSplitter failed to compile")
-	}
+func init_commands() {
+  global_command_arg_splitter = regexp.MustCompile(`(?i)(?:[^\s"]+\b|:|(")[^"]*("))+|[=!&|~+\-\*\/\%]`)
+  if global_command_arg_splitter  == nil {
+    panik("arg_splitter failed to compile")
+  }
 }
 
-func ProcCommands(Ses *discordgo.Session, Msg *discordgo.MessageCreate) {
-	Args := GlobalCommandArgSplitter.FindAllString(Msg.Content, -1)
-	if Args != nil && len(Args) >= 2 {
-		CommandStr := Args[1]
-		Args = Args[2:] // get array from 2 to n
+func execute_commands(ses *discordgo.Session, msg *discordgo.MessageCreate) {
+  args := global_command_arg_splitter.FindAllString(msg.Content, -1)
+  if args != nil && len(args) >= 2 {
+    cmd_str := args[1]
+    args = args[2:] // get array from 2 to n
 
-		// Use this instead of interfaces
-		// Clearer, more concise, easier to debug
-		switch CommandStr {
+    // Use this instead of interfaces
+    // Clearer, more concise, easier to debug
+    switch cmd_str {
         case "help":
-            Ses.ChannelMessageSend(Msg.ChannelID, MsgHelp)
-		case "version":
-			Ses.ChannelMessageSend(Msg.ChannelID, MsgVersion)
+            ses.ChannelMessageSend(msg.ChannelID, MSG_HELP)
+    case "version":
+      ses.ChannelMessageSend(msg.ChannelID,   MSG_VERSION)
         case "add-alias":
-            CmdAddAlias(Ses, Msg, Args)
+            cmd_add_alias(ses, msg, args)
         case "get-alias":
-            CmdGetAlias(Ses, Msg, Args)
+            cmd_get_alias(ses, msg, args)
         case "remove-alias":
-            CmdRemoveAlias(Ses, Msg, Args)
+            cmd_remove_alias(ses, msg, args)
         case "find":
-            CmdFind(Ses, Msg, Args)
-		case "resist":
-            CmdResist(Ses, Msg, Args)
-	    }
+            cmd_find(ses, msg, args)
+    case "resist":
+            cmd_resist(ses, msg, args)
+      }
     }
 }
 
-func WrapCode(Str string) string {
-	return "```" + Str + "```"
+func wrap_code(str string) string {
+  return "```" + str + "```"
 }
 
-func CmdFind(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Args []string) {
-	if len(Args) != 1 {
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgFindHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
-	}
-	//defer recovery(discord, message)
+func cmd_find(ses *discordgo.Session, msg *discordgo.MessageCreate, args []string) {
+  if len(args) != 1 {
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_HELP_FIND)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
+  //defer recovery(discord, message)
 
-	Key := strings.ToLower(Args[0])
+  key := strings.ToLower(args[0])
 
-	// Check if it is an alias. If so, get the actual key from alias.
-    GlobalDb.View(func(Tx *bolt.Tx) error {
-        B := Tx.Bucket([]byte("alias")) 
-        AliasValue := B.Get([]byte(Key))
-        if AliasValue != nil {
-            // Key is an alias 
-            // Thus, find the entry from dictionary using alias value
-            AliasValueStr := string(AliasValue)
-            Entry, Exist := GlobalDictionary[AliasValueStr]
-            if !Exist {
-                Ses.ChannelMessageSend(Msg.ChannelID, MsgFindFail)
-                return nil
-            }
-            EntryStr := string(Entry)
-            Reply := fmt.Sprintf(MsgFindFoundWithAlias, Key, AliasValueStr, EntryStr) 
-            Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-            return nil
-        } 
-       
-        // Key is an alias 
-        // Thus, find the entry from dictionary using alias value
-        Entry, Exist := GlobalDictionary[Key]
-        if !Exist {
-            Ses.ChannelMessageSend(Msg.ChannelID, MsgFindFail)
-            return nil
-        }
-        EntryStr := string(Entry)
-        Reply := fmt.Sprintf(MsgFindFound, Key, EntryStr) 
-        Ses.ChannelMessageSend(Msg.ChannelID, Reply)
+  // Check if it is an alias. If so, get the actual key from alias.
+  global_db.View(func(tx *bolt.Tx) error {
+    bucket := tx.Bucket([]byte("alias")) 
+    alias_value := bucket.Get([]byte(key))
+    if alias_value != nil {
+      // key is an alias 
+      // Thus, find the entry from dictionary using alias value
+      alias_value_str := string(alias_value)
+      entry, exist := global_dictionary[alias_value_str]
+      if !exist {
+          ses.ChannelMessageSend(msg.ChannelID, MSG_FIND_FAIL)
+          return nil
+      }
+      entry_str := string(entry)
+      reply := fmt.Sprintf(MSG_FIND_PASS_WITH_ALIAS, key, alias_value_str, entry_str) 
+      ses.ChannelMessageSend(msg.ChannelID, reply)
+      return nil
+    } 
+     
+    // key is an alias 
+    // Thus, find the entry from dictionary using alias value
+    entry, exist := global_dictionary[key]
+    if !exist {
+        ses.ChannelMessageSend(msg.ChannelID, MSG_FIND_FAIL)
         return nil
-    })
-
-
-}
-
-func CmdRemoveAlias(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Args []string) {
-	if len(Args) <= 0 {
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgRemoveAliasHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
-	}
-
-	AliasName := strings.Join(Args[0:], " ")
-    GlobalDb.Update(func(Tx *bolt.Tx) error {
-        // Check if entry exists
-        B := Tx.Bucket([]byte("alias")) 
-        V := B.Get([]byte(AliasName))
-        if V == nil {
-            // If it does not exist, we failed  
-            Reply := fmt.Sprintf(MsgRemoveAliasFailure, AliasName)
-            Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-
-        } else {
-            // if it does, then there's a duplicate
-            B.Delete([]byte(AliasName))
-            Reply := fmt.Sprintf(MsgRemoveAliasSuccess, AliasName)
-            Ses.ChannelMessageSend(Msg.ChannelID, Reply) 
-        }
-        return nil
-    })
-}
-
-func CmdGetAlias(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Args []string) {
-	if len(Args) <= 0 {
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgGetAliasHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
-	}
-
-	AliasName := strings.Join(Args[0:], " ")
-
-    // Select value from alias where key = ?
-    GlobalDb.View(func(Tx *bolt.Tx) error {
-        // Check if entry exists
-        B := Tx.Bucket([]byte("alias")) 
-        TargetName := B.Get([]byte(AliasName))
-        if TargetName == nil {
-            // Does not exist
-            Reply := fmt.Sprintf(MsgGetAliasFailed, AliasName)
-            Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-        } else {
-            // If it does, then there's a duplicate
-            Reply := fmt.Sprintf(MsgGetAliasSuccess, TargetName, AliasName)
-            Ses.ChannelMessageSend(Msg.ChannelID, Reply) 
-        }
-        return nil
-    })
-}
-
-func CmdAddAlias(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Args []string) {
-    if len(Args) <= 0 {
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgAddAliasHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
     }
-    
-    // combine '<alias> = <target>' into one string
-	StrToParse := strings.Join(Args[0:], " ")           	
+    entry_str := string(entry)
+    reply := fmt.Sprintf(MSG_FIND_PASS, key, entry_str) 
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return nil
+  })
+}
 
-    // split to: '<alias>', '=', '<target>'
-    StrToParseArray := strings.Split(StrToParse, " = ") 	
-    if len(StrToParseArray) != 2 {                      
-        // we expect 2 items in the array: '<alias>' and '<target>'
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgAddAliasHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
-	}
-	AliasName := strings.ToLower(StrToParseArray[0])
-	TargetName := strings.ToLower(StrToParseArray[1])
-    
-    if _, Exist := GlobalDictionary[TargetName]; !Exist {
-		Ses.ChannelMessageSend(Msg.ChannelID, MsgAddAliasTargetNotFound)
+func cmd_remove_alias(ses *discordgo.Session, msg *discordgo.MessageCreate, args []string) {
+  if len(args) <= 0 {
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_HELP_REMOVE_ALIAS)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
+
+  alias_name := strings.Join(args[0:], " ")
+  global_db.Update(func(tx *bolt.Tx) error {
+    // Check if entry exists
+    b := tx.Bucket([]byte("alias")) 
+    v := b.Get([]byte(alias_name))
+    if v == nil {
+      // If it does not exist, we failed  
+      reply := fmt.Sprintf(MSG_REMOVE_ALIAS_FAIL, alias_name)
+      ses.ChannelMessageSend(msg.ChannelID, reply)  
     } else {
-        // TODO: We can optimize by using View to check 
-        // if an alias exist first, then use Update if it doesn't.
-        // Then again, it might be safer to just lock the whole thing.
-        // Whatever #lazyprogramming
-        GlobalDb.Update(func(Tx *bolt.Tx) error {
-            // Check if entry exists
-            B := Tx.Bucket([]byte("alias")) 
-            V := B.Get([]byte(AliasName))
-            if V == nil {
-                // If it does not exist, insert 
-                B.Put([]byte(AliasName), []byte(TargetName))
-                Reply := fmt.Sprintf(MsgAddAliasSuccess, TargetName, AliasName)
-                Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-
-            } else {
-                // if it does, then there's a duplicate
-                Reply := fmt.Sprintf(MsgAddAliasDuplicateFound, AliasName)
-                Ses.ChannelMessageSend(Msg.ChannelID, Reply) 
-            }
-            return nil
-        })
-
+      // if it does, then there's a duplicate
+      b.Delete([]byte(alias_name))
+      reply := fmt.Sprintf(MSG_REMOVE_ALIAS_PASS, alias_name)
+      ses.ChannelMessageSend(msg.ChannelID, reply) 
     }
+    return nil
+  })
+}
+
+func cmd_get_alias(ses *discordgo.Session, msg *discordgo.MessageCreate, args []string) {
+  if len(args) <= 0 {
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_HELP_GET_ALIAS)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
+
+  alias_name := strings.Join(args[0:], " ")
+
+  // Select value from alias where key = ?
+  global_db.View(func(tx *bolt.Tx) error {
+    // Check if entry exists
+    b := tx.Bucket([]byte("alias")) 
+    target_name := b.Get([]byte(alias_name))
+    if target_name == nil {
+      // Does not exist
+      reply := fmt.Sprintf(MSG_GET_ALIAS_FAIL, alias_name)
+      ses.ChannelMessageSend(msg.ChannelID, reply)
+    } else {
+      // If it does, then there's a duplicate
+      reply := fmt.Sprintf(MSG_GET_ALIAS_PASS, target_name, alias_name)
+      ses.ChannelMessageSend(msg.ChannelID, reply) 
+    }
+    return nil
+  })
+}
+
+func cmd_add_alias(ses *discordgo.Session, msg *discordgo.MessageCreate, args []string) {
+  if len(args) <= 0 {
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_HELP_ADD_ALIAS)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
+    
+  // combine '<alias> = <target>' into one string
+  str_to_parse := strings.Join(args[0:], " ")             
+
+  // split to: '<alias>', '=', '<target>'
+  str_to_parse_arr := strings.Split(str_to_parse, " = ")   
+  if len(str_to_parse_arr) != 2 {                      
+    // we expect 2 items in the array: '<alias>' and '<target>'
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_HELP_ADD_ALIAS)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
+  alias_name := strings.ToLower(str_to_parse_arr[0])
+  target_name := strings.ToLower(str_to_parse_arr[1])
+    
+  if _, exist := global_dictionary[target_name]; !exist {
+    ses.ChannelMessageSend(msg.ChannelID, MSG_ADD_ALIAS_TARGET_NOT_FOUND)
+  } else {
+    // TODO: We can optimize by using View to check 
+    // if an alias exist first, then use Update if it doesn't.
+    // Then again, it might be safer to just lock the whole thing.
+    // Whatever #lazyprogramming
+    global_db.Update(func(tx *bolt.Tx) error {
+      // Check if entry exists
+      b := tx.Bucket([]byte("alias")) 
+      v := b.Get([]byte(alias_name))
+      if v == nil {
+          // If it does not exist, insert 
+          b.Put([]byte(alias_name), []byte(target_name))
+          reply := fmt.Sprintf(MSG_ADD_ALIAS_PASS, target_name, alias_name)
+          ses.ChannelMessageSend(msg.ChannelID, reply)
+
+      } else {
+        // if it does, then there's a duplicate
+        reply := fmt.Sprintf(MSG_ADD_ALIAS_DUPLICATE_FOUND, alias_name)
+        ses.ChannelMessageSend(msg.ChannelID, reply) 
+      }
+      return nil
+    })
+
+  }
 
 }
 
 
-func CmdResist(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Args []string) {
-	if len(Args) != 3 || Args[1] != "vs" {
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgResistHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
-		return
-	}
+func cmd_resist(ses *discordgo.Session, msg *discordgo.MessageCreate, args []string) {
+  if len(args) != 3 || args[1] != "vs" {
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_RESIST_HELP)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
+    return
+  }
 
-    Active, AtoiErr := strconv.Atoi(Args[0])
+    Active, AtoiErr := strconv.Atoi(args[0])
     if AtoiErr != nil {
-        fmt.Println("[CmdResist] Itoa Error on Active")
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgResistHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
+        fmt.Println("[cmd_resist] Itoa Error on Active")
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_RESIST_HELP)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
         return
    }
 
-    Passive, AtoiErr := strconv.Atoi(Args[2]) 
+    Passive, AtoiErr := strconv.Atoi(args[2]) 
     if AtoiErr != nil {
-        fmt.Println("[CmdResist] Itoa Error on Passive")
-		Reply := fmt.Sprintf(MsgHelpQuery, MsgResistHelp)
-		Ses.ChannelMessageSend(Msg.ChannelID, Reply)
+        fmt.Println("[cmd_resist] Itoa Error on Passive")
+    reply := fmt.Sprintf(MSG_HELP_QUERY, MSG_RESIST_HELP)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
         return
     }
 
     Result := (Active - Passive) * 5 + 50
-    Reply := fmt.Sprintf(MsgResistThink, Active, Passive)
+    reply := fmt.Sprintf(MSG_RESIST_THINK, Active, Passive)
     if Result > 95 {
-        Reply += MsgResistAutoSuccess 
+        reply += MSG_RESIST_AUTO_PASS 
     } else if Result < 5 {
-        Reply += MsgResistAutoFail 
+        reply += MSG_RESIST_AUTO_FAIL 
     } else {
-        Reply += fmt.Sprintf(MsgResistNormal, Result) 
+        reply += fmt.Sprintf(MSG_RESIST_NORMAL, Result) 
     }
-    Ses.ChannelMessageSend(Msg.ChannelID, Reply)
+    ses.ChannelMessageSend(msg.ChannelID, reply)
 }
 

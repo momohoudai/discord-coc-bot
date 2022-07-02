@@ -1,125 +1,121 @@
 package main
 
 import (
-	"github.com/bwmarrin/discordgo"
-    bolt "go.etcd.io/bbolt"
+  "github.com/bwmarrin/discordgo"
+  bolt "go.etcd.io/bbolt"
     
-    "os"
-    "encoding/json"
-	"fmt"
-	"io/ioutil"
-	"math/rand"
-	"regexp"
-	"strings"
-	"time"
+  "os"
+  "encoding/json"
+  "fmt"
+  "io/ioutil"
+  "math/rand"
+  "regexp"
+  "strings"
+  "time"
 )
 
 var (
-	GlobalBotId       string
-	GlobalArgSplitter *regexp.Regexp
-    GlobalDictionary  map[string]string
-    GlobalDb     *bolt.DB 
+  global_bot_id        string
+  global_arg_splitter  *regexp.Regexp
+  global_dictionary    map[string]string
+  global_db            *bolt.DB 
 )
 
-func MessageHandler(Ses *discordgo.Session, Msg *discordgo.MessageCreate) {
-	User := Msg.Author
-	if User.ID == GlobalBotId || User.Bot {
-		return
-	}
+func handle_message(ses *discordgo.Session, msg *discordgo.MessageCreate) {
+  user := msg.Author
+  if user.ID == global_bot_id || user.Bot {
+    return
+  }
 
-	// For message parsing
-	UpdateWordCount(Msg)
-
-	// handle prefix
-	Content := strings.ToLower(Msg.Content)
-	if strings.HasPrefix(Content, "!coc") {
-		go func() {
-			defer Kalm(Ses, Msg, "ProcCommands")
-			ProcCommands(Ses, Msg)
-		}()
-	} 
+  // handle prefix
+  content := strings.ToLower(msg.Content)
+  if strings.HasPrefix(content, "!coc") {
+    go func() {
+      defer kalm(ses, msg, "execute_commands")
+      execute_commands(ses, msg)
+    }()
+  } 
 }
 
-func ReadyHandler(Ses *discordgo.Session, Ready *discordgo.Ready) {
-	Err := Ses.UpdateListeningStatus("'!coc help'")
-	if Err != nil {
-		fmt.Println("Error attempting to set my status")
-	}
-	servers := Ses.State.Guilds
-	fmt.Printf("CocBot has started on %d servers\n", len(servers))
+func handle_ready(ses *discordgo.Session, ready *discordgo.Ready) {
+  err := ses.UpdateListeningStatus("'!coc help'")
+  if err != nil {
+    fmt.Println("Error attempting to set my status")
+  }
+  servers := ses.State.Guilds
+  fmt.Printf("CocBot has started on %d servers\n", len(servers))
 }
 
-func Panik(Format string, a ...interface{}) {
-	panic(fmt.Sprintf(Format, a...))
+func panik(format string, a ...interface{}) {
+  panic(fmt.Sprintf(format, a...))
 }
 
-func Kalm(Ses *discordgo.Session, Msg *discordgo.MessageCreate, Name string) {
-	if R := recover(); R != nil {
-		fmt.Printf("[%s] Recovered: %v\n", Name, R)
-		Ses.ChannelMessageSend(Msg.ChannelID, MsgGenericFail)
-	}
+func kalm(ses *discordgo.Session, msg *discordgo.MessageCreate, name string) {
+  if r := recover(); r != nil {
+    fmt.Printf("[%s] Recovered: %v\n", name, r)
+    ses.ChannelMessageSend(msg.ChannelID, MSG_GENERIC_FAIL)
+  }
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-	Token, ReadFileErr := ioutil.ReadFile("TOKEN")
-	if ReadFileErr != nil {
-		Panik("Cannot read or find TOKEN file\n")
-	}
+  rand.Seed(time.Now().UnixNano())
+  token, read_file_err := ioutil.ReadFile("TOKEN")
+  if read_file_err != nil {
+    panik("Cannot read or find TOKEN file\n")
+  }
 
-	InitCommands()
-    
-    // Configure Dictionary
-    JsonFile, OpenErr := os.Open("data.json")
-	if OpenErr != nil {
-        Panik("Cannot open data.json")
-	}
-	defer JsonFile.Close()
+  init_commands()
 
-    JsonBytes, ReadAllErr := ioutil.ReadAll(JsonFile)
-    if ReadAllErr != nil {
-        Panik("Cannot read data.json");
-    }
+  // Configure Dictionary
+  json_file, open_err := os.Open("data.json")
+  if open_err != nil {
+    panik("Cannot open data.json")
+  }
+  defer json_file.Close()
 
-    UnmarshalErr := json.Unmarshal(JsonBytes, &GlobalDictionary)
-    if UnmarshalErr != nil {
-        Panik("Cannot unmarshal data.json")
-    }
+  json_bytes, read_all_err := ioutil.ReadAll(json_file)
+  if read_all_err != nil {
+    panik("Cannot read data.json");
+  }
 
-    // Configure Alias DB
-    var DbOpenErr error
-    GlobalDb, DbOpenErr = bolt.Open("./db", 0666, nil)
-    if DbOpenErr != nil {
-        Panik("Cannot open database: %s", DbOpenErr)
-    }
-    defer GlobalDb.Close()
-    GlobalDb.Update(func (Tx *bolt.Tx) error {
-        _, Err := Tx.CreateBucketIfNotExists([]byte("alias"))
-        if Err != nil {
-            return fmt.Errorf("Cannot create 'alias' bucket")
-        }
-        return nil
-    })
+  unmarshal_err := json.Unmarshal(json_bytes, &global_dictionary)
+  if unmarshal_err != nil {
+    panik("Cannot unmarshal data.json")
+  }
 
-	// Configure Discord
-	Discord, Err := discordgo.New("Bot " + string(Token))
-	if Err != nil {
-		Panik("Cannot initialize discord: %s\n", Err.Error())
-	}
-	User, Err := Discord.User("@me")
-	if Err != nil {
-		Panik("Error retrieving account: %s\n", Err.Error())
-	}
-	GlobalBotId = User.ID
-	Discord.AddHandler(MessageHandler)
-	Discord.AddHandler(ReadyHandler)
+  // Configure Alias DB
+  var db_open_err error
+  global_db, db_open_err = bolt.Open("./db", 0666, nil)
+  if db_open_err != nil {
+    panik("Cannot open database: %s", db_open_err)
+  }
+  defer global_db.Close()
+  global_db.Update(func (tx *bolt.Tx) error {
+      _, err := tx.CreateBucketIfNotExists([]byte("alias"))
+      if err != nil {
+          return fmt.Errorf("Cannot create 'alias' bucket")
+      }
+      return nil
+  })
 
-	Err = Discord.Open()
-	if Err != nil {
-		Panik("Error retrieving account: %s\n", Err.Error())
-	}
-	defer Discord.Close()
+  // Configure Discord
+  discord, err := discordgo.New("Bot " + string(token))
+  if err != nil {
+    panik("Cannot initialize discord: %s\n", err.Error())
+  }
+  user, err := discord.User("@me")
+  if err != nil {
+    panik("Error retrieving account: %s\n", err.Error())
+  }
+  global_bot_id = user.ID
+  discord.AddHandler(handle_message)
+  discord.AddHandler(handle_ready)
 
-	<-make(chan struct{})
+  err = discord.Open()
+  if err != nil {
+    panik("Error retrieving account: %s\n", err.Error())
+  }
+  defer discord.Close()  
+  <-make(chan struct{})
 
 }
