@@ -4,7 +4,7 @@ import (
   "strings"
 )
 
-const MSG_VERSION = "I'm CocBot v7.0.0, written in Golang!"
+const MSG_VERSION = "I'm CocBot v7.0.1, written in Golang!"
 const MSG_RESIST_THINK = "Let's see...\nActive: **%d**\nPassive: **%d**\n"
 const MSG_RESIST_AUTO_PASS = "The result is an **Automatic Success**!! \\(^o^)/"
 const MSG_RESIST_AUTO_FAIL = "The result is an **Automatic Failure**!! (´・ω・`)"
